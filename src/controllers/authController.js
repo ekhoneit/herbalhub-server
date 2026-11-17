@@ -632,3 +632,12 @@ exports.logout = async (req, res) => {
         message: 'Logged out successfully'
     });
 };
+
+
+// Social auth placeholder
+exports.socialAuth = async (req, res) => {
+    return res.status(400).json({
+        success: false,
+        error: 'Social login handled client-side'
+    });
+};
