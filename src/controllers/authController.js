@@ -294,6 +294,8 @@ exports.verifyOtp = async (req, res) => {
                     user: {
                         id: user.id,
                         email: user.email,
+                        emailVerified: user.emailVerified,
+                        email_confirmed_at: user.emailVerified ? new Date().toISOString() : null,
                         user_metadata: {
                             full_name: user.name,
                             phone: user.phone
@@ -388,6 +390,8 @@ exports.login = async (req, res) => {
                     user: {
                         id: user.id,
                         email: user.email,
+                        emailVerified: user.emailVerified,
+                        email_confirmed_at: user.emailVerified ? new Date().toISOString() : null,
                         user_metadata: {
                             full_name: user.name,
                             phone: user.phone
@@ -563,6 +567,8 @@ exports.getCurrentUser = async (req, res) => {
                     name: user.name,
                     phone: user.phone,
                     role: user.role,
+                    emailVerified: user.emailVerified,
+                    email_confirmed_at: user.emailVerified ? (user.updatedAt || new Date()).toISOString() : null,
                     user_metadata: {
                         full_name: user.name,
                         phone: user.phone
