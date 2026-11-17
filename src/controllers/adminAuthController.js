@@ -1,281 +1,251 @@
-const { createClient } = require('@supabase/supabase-js');
-const axios = require('axios');
+const { PrismaClient } = require('@prisma/client');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const { render } = require('@react-email/render');
+const { resend, fromAddresses, emailTemplates } = require('./emailController');
 
-// Initialize Supabase admin client
-const supabase = createClient(
-    process.env.SUPABASE_URL,
-    process.env.SUPABASE_SERVICE_ROLE_KEY,
-    {
-        auth: {
-            autoRefreshToken: false,
-            persistSession: false
-        }
-    }
-);
+const prisma = new PrismaClient();
+const JWT_SECRET = process.env.JWT_SECRET || process.env.BETTER_AUTH_SECRET || 'herbalhub-jwt-secret-key';
+const TOKEN_EXPIRY = '7d';
 
-// Sign Up Controller
+function generateOTP() {
+    return Math.floor(100000 + Math.random() * 900000).toString();
+}
+
+function generateToken(user) {
+    return jwt.sign(
+        {
+            id: user.id,
+            email: user.email,
+            role: user.role || 'admin',
+            name: user.name || ''
+        },
+        JWT_SECRET,
+        { expiresIn: TOKEN_EXPIRY }
+    );
+}
+
+// Sign Up Controller (Admin)
 exports.signUp = async (req, res) => {
     try {
         const { email, password, name } = req.body;
 
-        // 1. Check if email already exists in Supabase
-        const { data: allUsers, error: listError } = await supabase.auth.admin.listUsers();
+        if (!email || !password) {
+            return res.status(400).json({ success: false, error: 'Email and password required' });
+        }
 
-        if (listError) {
-            return res.status(500).json({
-                success: false,
-                error: 'Server error'
+        const normalizedEmail = email.toLowerCase().trim();
+        let user = await prisma.user.findUnique({ where: { email: normalizedEmail } });
+
+        if (user && user.emailVerified) {
+            return res.status(400).json({ success: false, error: 'Email already registered. Please login.' });
+        }
+
+        const hashedPassword = await bcrypt.hash(password, 10);
+
+        if (user) {
+            user = await prisma.user.update({
+                where: { id: user.id },
+                data: { name: name || user.name }
+            });
+            await prisma.account.deleteMany({ where: { userId: user.id, providerId: 'credential' } });
+            await prisma.account.create({
+                data: { userId: user.id, accountId: user.id, providerId: 'credential', password: hashedPassword }
+            });
+        } else {
+            user = await prisma.user.create({
+                data: {
+                    email: normalizedEmail,
+                    name: name || 'Admin',
+                    role: 'admin',
+                    emailVerified: false,
+                    accounts: {
+                        create: {
+                            accountId: normalizedEmail,
+                            providerId: 'credential',
+                            password: hashedPassword
+                        }
+                    }
+                }
             });
         }
 
-        // 2. Find user with this email
-        const existingUser = allUsers.users.find(user => user.email === email);
-
-        // 3. If user exists AND IS VERIFIED → show error
-        if (existingUser && existingUser.email_confirmed_at) {
-            return res.status(400).json({
-                success: false,
-                error: 'Email already registered. Please login.'
-            });
-        }
-
-        // 4. If user exists BUT IS NOT VERIFIED → DELETE IT
-        if (existingUser && !existingUser.email_confirmed_at) {
-            console.log('Deleting unverified user:', email);
-            await supabase.auth.admin.deleteUser(existingUser.id);
-        }
-
-        // 5. Now create new user
-        const { data: authData, error: authError } = await supabase.auth.admin.createUser({
-            email,
-            password,
-            email_confirm: false,
-            user_metadata: {
-                full_name: name || ''
-               
-            }
+        const otp = generateOTP();
+        const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+        await prisma.verification.deleteMany({ where: { identifier: `admin_signup_${normalizedEmail}` } });
+        await prisma.verification.create({
+            data: { identifier: `admin_signup_${normalizedEmail}`, value: otp, expiresAt }
         });
 
-        if (authError) {
-            return res.status(400).json({
-                success: false,
-                error: authError.message
-            });
-        }
-
-        // 6. Send verification email
         try {
-            await axios.post(
-                `${process.env.API_URL}/api/emails`,
-                {
-                    type: 'verification',
-                    email: email,
-                    password: password,
-                    isPasswordReset: false,
-                    origin: req.headers.origin || process.env.ADMIN_FRONTEND_URL
-                }
+            const emailHtml = await render(
+                emailTemplates.verification({ otp, isPasswordReset: false })
             );
-        } catch (emailError) {
-            // If email fails, delete the user
-            await supabase.auth.admin.deleteUser(authData.user.id);
-
-            return res.status(500).json({
-                success: false,
-                error: 'Failed to send verification email'
+            await resend.emails.send({
+                from: fromAddresses.verification,
+                to: normalizedEmail,
+                subject: 'Verify your admin account - Herbalhub',
+                html: emailHtml
             });
+        } catch (e) {
+            console.error('Email error:', e);
         }
 
-        // 7. Success response
         return res.status(201).json({
             success: true,
-            message: 'Account created. Check email for verification.',
-            data: {
-                user: {
-                    id: authData.user.id,
-                    email: authData.user.email
-                  
-                }
-            }
+            message: 'Account created. Check email for verification code.',
+            data: { user: { id: user.id, email: user.email } }
         });
 
     } catch (error) {
-        console.error('SignUp error:', error);
-        return res.status(500).json({
-            success: false,
-            error: 'Internal server error'
-        });
+        console.error('Admin SignUp error:', error);
+        return res.status(500).json({ success: false, error: 'Internal server error' });
     }
 };
 
-
-// Add this NEW function after signUp function
+// Resend OTP
 exports.resendOtp = async (req, res) => {
     try {
-        const { email } = req.body;
+        const { email, isPasswordReset } = req.body;
+        if (!email) return res.status(400).json({ error: 'Email is required' });
 
-        if (!email) {
-            return res.status(400).json({ error: 'Email is required' });
-        }
+        const normalizedEmail = email.toLowerCase().trim();
+        const otp = generateOTP();
+        const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+        const identifier = isPasswordReset ? `admin_reset_${normalizedEmail}` : `admin_signup_${normalizedEmail}`;
 
-        // Send verification email again
-        await axios.post(
-            `${process.env.API_URL}/api/emails`,
-            {
-                type: 'verification',
-                email: email,
-                isPasswordReset: false
-            }
-        );
-
-        return res.json({
-            success: true,
-            message: 'New verification code sent'
+        await prisma.verification.deleteMany({ where: { identifier } });
+        await prisma.verification.create({
+            data: { identifier, value: otp, expiresAt }
         });
 
+        try {
+            const emailHtml = await render(
+                emailTemplates.verification({ otp, isPasswordReset: !!isPasswordReset })
+            );
+            await resend.emails.send({
+                from: fromAddresses.verification,
+                to: normalizedEmail,
+                subject: isPasswordReset ? 'Reset your admin password - Herbalhub' : 'Verify your admin account - Herbalhub',
+                html: emailHtml
+            });
+        } catch (e) {
+            console.error('Email error:', e);
+        }
+
+        return res.json({ success: true, message: 'New verification code sent' });
+
     } catch (error) {
-        console.error('Resend OTP error:', error);
+        console.error('Admin Resend OTP error:', error);
         return res.status(500).json({ error: 'Failed to resend code' });
     }
 };
 
-
-// Verify OTP Controller
+// Verify OTP
 exports.verifyOtp = async (req, res) => {
     try {
         const { email, otp, isPasswordReset } = req.body;
+        if (!email || !otp) return res.status(400).json({ success: false, error: 'Email and OTP required' });
 
-        console.log('🔐 Verifying OTP for:', email, '| Type:', isPasswordReset ? 'password-reset' : 'signup');
+        const normalizedEmail = email.toLowerCase().trim();
+        const identifier = isPasswordReset ? `admin_reset_${normalizedEmail}` : `admin_signup_${normalizedEmail}`;
 
-        if (!email || !otp) {
-            return res.status(400).json({
-                success: false,
-                error: 'Email and OTP are required'
-            });
-        }
-
-        // Verify OTP with Supabase
-        const { data, error } = await supabase.auth.verifyOtp({
-            email,
-            token: otp,
-            type: isPasswordReset ? 'recovery' : 'email'
+        const record = await prisma.verification.findFirst({
+            where: { identifier, value: otp.toString().trim(), expiresAt: { gt: new Date() } }
         });
 
-        if (error) {
-            console.error('❌ OTP verification failed:', error.message);
-            return res.status(400).json({
-                success: false,
-                error: 'Invalid or expired verification code'
-            });
+        if (!record) {
+            return res.status(400).json({ success: false, error: 'Invalid or expired OTP' });
         }
 
-        console.log('✅ OTP verified successfully');
+        await prisma.verification.delete({ where: { id: record.id } });
 
-        // If it's not a password reset, send welcome email
-        if (!isPasswordReset && data.user) {
-            try {
-                console.log('📧 Sending welcome email...');
-                await axios.post(
-                    `${process.env.API_URL}/api/emails`, 
-                    {
-                        type: 'welcome',
-                        email: email,
-                        origin: req.headers.origin || process.env.ADMIN_FRONTEND_URL
-                    },
-                    {
-                        headers: { 'Content-Type': 'application/json' },
-                        timeout: 5000
-                    }
-                );
-                console.log('✅ Welcome email sent');
-            } catch (emailError) {
-                console.error('⚠️ Welcome email error:', emailError.message);
-                // Continue even if welcome email fails
-            }
-        }
+        const user = await prisma.user.update({
+            where: { email: normalizedEmail },
+            data: { emailVerified: true, role: 'admin' }
+        });
+
+        const token = generateToken(user);
 
         return res.status(200).json({
             success: true,
-            message: 'Verification successful',
             data: {
-                user: data.user,
-                session: data.session
+                user: { id: user.id, email: user.email, name: user.name, role: 'admin' },
+                session: {
+                    access_token: token,
+                    refresh_token: token,
+                    user: {
+                        id: user.id,
+                        email: user.email,
+                        user_metadata: { full_name: user.name }
+                    }
+                }
             }
         });
 
     } catch (error) {
-        console.error('❌ Verify OTP error:', error);
-        return res.status(500).json({
-            success: false,
-            error: error.message || 'Internal server error'
-        });
+        console.error('Admin Verify OTP error:', error);
+        return res.status(500).json({ success: false, error: 'Internal server error' });
     }
 };
 
-// Login Controller - UPDATED TO SUPPORT BOTH EMAIL
+// Login
 exports.login = async (req, res) => {
     try {
         const { email, password } = req.body;
-
-        if (!password) {
-            return res.status(400).json({
-                success: false,
-                error: 'Password is required'
-            });
+        if (!email || !password) {
+            return res.status(400).json({ success: false, error: 'Email and password required' });
         }
 
-        let loginIdentifier = email;
-
-        if (!loginIdentifier) {
-            return res.status(400).json({
-                success: false,
-                error: 'Email  is required'
-            });
-        }
-
-        // Sign in with Supabase using email and password
-        const { data, error } = await supabase.auth.signInWithPassword({
-            email: loginIdentifier,
-            password: password
+        const normalizedEmail = email.toLowerCase().trim();
+        const user = await prisma.user.findUnique({
+            where: { email: normalizedEmail },
+            include: { accounts: true }
         });
 
-        if (error) {
-            console.error('❌ Login failed:', error.message);
-
-            if (error.message.includes('Invalid login credentials')) {
-                return res.status(401).json({
-                    success: false,
-                    error: email ? 'Invalid  password' : 'Invalid email or password'
-                });
-            }
-
-            if (error.message.includes('Email not confirmed')) {
-                return res.status(401).json({
-                    success: false,
-                    error: 'Please verify your email before logging in'
-                });
-            }
-
-            return res.status(401).json({
-                success: false,
-                error: error.message
-            });
+        if (!user) {
+            return res.status(400).json({ success: false, error: 'Invalid email or password' });
         }
+
+        const credAccount = user.accounts?.find(a => a.providerId === 'credential');
+        if (!credAccount || !credAccount.password) {
+            return res.status(400).json({ success: false, error: 'Invalid login credentials' });
+        }
+
+        const isMatch = await bcrypt.compare(password, credAccount.password);
+        if (!isMatch) {
+            return res.status(400).json({ success: false, error: 'Invalid email or password' });
+        }
+
+        const token = generateToken(user);
 
         return res.status(200).json({
             success: true,
             message: 'Login successful',
             data: {
-                user: data.user,
-                session: data.session
+                user: {
+                    id: user.id,
+                    email: user.email,
+                    name: user.name,
+                    role: user.role
+                },
+                session: {
+                    access_token: token,
+                    refresh_token: token,
+                    user: {
+                        id: user.id,
+                        email: user.email,
+                        user_metadata: {
+                            full_name: user.name
+                        }
+                    }
+                }
             }
         });
 
     } catch (error) {
-        console.error('❌ Login error:', error);
-        return res.status(500).json({
-            success: false,
-            error: error.message || 'Internal server error'
-        });
+        console.error('Admin login error:', error);
+        return res.status(500).json({ success: false, error: 'Internal server error' });
     }
 };
 
@@ -283,48 +253,38 @@ exports.login = async (req, res) => {
 exports.requestPasswordReset = async (req, res) => {
     try {
         const { email } = req.body;
+        if (!email) return res.status(400).json({ success: false, error: 'Email is required' });
 
-        if (!email) {
-            return res.status(400).json({
-                success: false,
-                error: 'Email is required'
-            });
-        }
+        const normalizedEmail = email.toLowerCase().trim();
+        const user = await prisma.user.findUnique({ where: { email: normalizedEmail } });
+        if (!user) return res.status(404).json({ success: false, error: 'User not found' });
 
-        // Send password reset email via your email service
-        try {
-            console.log('📧 Sending password reset email...');
-            await axios.post(
-                `${process.env.API_URL}/api/emails`,
-                {
-                    type: 'verification',
-                    email: email,
-                    isPasswordReset: true,
-                    origin: req.headers.origin || process.env.ADMIN_FRONTEND_URL
-                },
-                {
-                    headers: { 'Content-Type': 'application/json' },
-                    timeout: 10000
-                }
-            );
-
-            console.log('✅ Password reset email sent');
-        } catch (emailError) {
-            console.error('❌ Password reset email failed:', emailError.response?.data || emailError.message);
-            // Don't reveal if email exists or not for security
-        }
-
-        return res.status(200).json({
-            success: true,
-            message: 'If that email exists, a password reset code has been sent'
+        const otp = generateOTP();
+        const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+        await prisma.verification.deleteMany({ where: { identifier: `admin_reset_${normalizedEmail}` } });
+        await prisma.verification.create({
+            data: { identifier: `admin_reset_${normalizedEmail}`, value: otp, expiresAt }
         });
+
+        try {
+            const emailHtml = await render(
+                emailTemplates.verification({ otp, isPasswordReset: true })
+            );
+            await resend.emails.send({
+                from: fromAddresses.verification,
+                to: normalizedEmail,
+                subject: 'Reset your admin password - Herbalhub',
+                html: emailHtml
+            });
+        } catch (e) {
+            console.error('Email error:', e);
+        }
+
+        return res.status(200).json({ success: true, message: 'Password reset code sent' });
 
     } catch (error) {
-        console.error('❌ Password reset request error:', error);
-        return res.status(500).json({
-            success: false,
-            error: error.message || 'Internal server error'
-        });
+        console.error('Admin Reset Request error:', error);
+        return res.status(500).json({ success: false, error: 'Internal server error' });
     }
 };
 
@@ -333,123 +293,44 @@ exports.updatePassword = async (req, res) => {
     try {
         const { newPassword } = req.body;
         const authHeader = req.headers.authorization;
-
-        console.log('🔒 Password update requested');
-
-        if (!newPassword) {
-            return res.status(400).json({
-                success: false,
-                error: 'New password is required'
-            });
-        }
-
-        if (newPassword.length < 6) {
-            return res.status(400).json({
-                success: false,
-                error: 'Password must be at least 6 characters'
-            });
-        }
-
-        if (!authHeader || !authHeader.startsWith('Bearer ')) {
-            return res.status(401).json({
-                success: false,
-                error: 'Unauthorized'
-            });
+        if (!authHeader?.startsWith('Bearer ')) {
+            return res.status(401).json({ success: false, error: 'Unauthorized' });
         }
 
         const token = authHeader.split(' ')[1];
-
-        // Get user from token first
-        const { data: { user }, error: userError } = await supabase.auth.getUser(token);
-
-        if (userError || !user) {
-            return res.status(401).json({
-                success: false,
-                error: 'Invalid or expired token'
-            });
-        }
-
-        // Update user password
-        const { data, error } = await supabase.auth.admin.updateUserById(
-            user.id,
-            { password: newPassword }
-        );
-
-        if (error) {
-            console.error('❌ Password update failed:', error);
-            return res.status(400).json({
-                success: false,
-                error: error.message
-            });
-        }
-
-        console.log('✅ Password updated successfully');
-
-        // Send confirmation email
+        let decoded;
         try {
-            await axios.post(
-                `${process.env.API_URL}/api/emails`, // FIXED: Changed from /api/resend to /api/emails
-                {
-                    type: 'password-reset-confirmation',
-                    email: data.user.email,
-                    origin: req.headers.origin || process.env.ADMIN_FRONTEND_URL
-                },
-                {
-                    headers: { 'Content-Type': 'application/json' },
-                    timeout: 5000
-                }
-            );
-        } catch (emailError) {
-            console.error('⚠️ Confirmation email error:', emailError.message);
+            decoded = jwt.verify(token, JWT_SECRET);
+        } catch (e) {
+            return res.status(401).json({ success: false, error: 'Invalid token' });
         }
 
-        return res.status(200).json({
-            success: true,
-            message: 'Password updated successfully'
+        const hashedPassword = await bcrypt.hash(newPassword, 10);
+        const account = await prisma.account.findFirst({
+            where: { userId: decoded.id, providerId: 'credential' }
         });
 
-    } catch (error) {
-        console.error('❌ Update password error:', error);
-        return res.status(500).json({
-            success: false,
-            error: error.message || 'Internal server error'
-        });
-    }
-};
-
-// Logout Controller
-exports.logout = async (req, res) => {
-    try {
-        const authHeader = req.headers.authorization;
-
-        if (!authHeader || !authHeader.startsWith('Bearer ')) {
-            return res.status(401).json({
-                success: false,
-                error: 'Unauthorized'
+        if (account) {
+            await prisma.account.update({
+                where: { id: account.id },
+                data: { password: hashedPassword }
+            });
+        } else {
+            await prisma.account.create({
+                data: {
+                    userId: decoded.id,
+                    accountId: decoded.id,
+                    providerId: 'credential',
+                    password: hashedPassword
+                }
             });
         }
 
-        const token = authHeader.split(' ')[1];
-
-        // Revoke the session
-        const { error } = await supabase.auth.admin.signOut(token);
-
-        if (error) {
-            console.error('❌ Logout error:', error);
-            // Return success anyway since client will clear tokens
-        }
-
-        return res.status(200).json({
-            success: true,
-            message: 'Logged out successfully'
-        });
+        return res.status(200).json({ success: true, message: 'Password updated successfully' });
 
     } catch (error) {
-        console.error('❌ Logout error:', error);
-        return res.status(500).json({
-            success: false,
-            error: error.message || 'Internal server error'
-        });
+        console.error('Admin Update Password error:', error);
+        return res.status(500).json({ success: false, error: 'Internal server error' });
     }
 };
 
@@ -457,34 +338,36 @@ exports.logout = async (req, res) => {
 exports.getCurrentUser = async (req, res) => {
     try {
         const authHeader = req.headers.authorization;
-
-        if (!authHeader || !authHeader.startsWith('Bearer ')) {
-            return res.status(401).json({
-                success: false,
-                error: 'Unauthorized'
-            });
+        if (!authHeader?.startsWith('Bearer ')) {
+            return res.status(401).json({ success: false, error: 'Unauthorized' });
         }
 
         const token = authHeader.split(' ')[1];
-
-        // Get user from token
-        const { data: { user }, error } = await supabase.auth.getUser(token);
-
-        if (error || !user) {
-            return res.status(401).json({
-                success: false,
-                error: 'Invalid or expired token'
-            });
+        let decoded;
+        try {
+            decoded = jwt.verify(token, JWT_SECRET);
+        } catch (e) {
+            return res.status(401).json({ success: false, error: 'Invalid token' });
         }
-        
-        return res.status(200).json({ data: { user } });
+
+        const user = await prisma.user.findUnique({ where: { id: decoded.id } });
+        if (!user) return res.status(401).json({ success: false, error: 'User not found' });
+
+        return res.status(200).json({
+            data: {
+                user: {
+                    id: user.id,
+                    email: user.email,
+                    name: user.name,
+                    role: user.role,
+                    user_metadata: { full_name: user.name }
+                }
+            }
+        });
 
     } catch (error) {
-        console.error('❌ Get current user error:', error);
-        return res.status(500).json({
-            success: false,
-            error: error.message || 'Internal server error'
-        });
+        console.error('Admin Get Current User error:', error);
+        return res.status(500).json({ success: false, error: 'Internal server error' });
     }
 };
 
@@ -492,38 +375,36 @@ exports.getCurrentUser = async (req, res) => {
 exports.refreshToken = async (req, res) => {
     try {
         const { refreshToken } = req.body;
+        if (!refreshToken) return res.status(400).json({ success: false, error: 'Refresh token required' });
 
-        if (!refreshToken) {
-            return res.status(400).json({
-                success: false,
-                error: 'Refresh token is required'
-            });
+        let decoded;
+        try {
+            decoded = jwt.verify(refreshToken, JWT_SECRET);
+        } catch (e) {
+            return res.status(401).json({ success: false, error: 'Invalid refresh token' });
         }
 
-        const { data, error } = await supabase.auth.refreshSession({
-            refresh_token: refreshToken
-        });
+        const user = await prisma.user.findUnique({ where: { id: decoded.id } });
+        if (!user) return res.status(401).json({ success: false, error: 'User not found' });
 
-        if (error) {
-            return res.status(401).json({
-                success: false,
-                error: 'Invalid or expired refresh token'
-            });
-        }
-
+        const newToken = generateToken(user);
         return res.status(200).json({
             success: true,
             data: {
-                session: data.session
+                session: {
+                    access_token: newToken,
+                    refresh_token: newToken
+                }
             }
         });
 
     } catch (error) {
-        console.error('❌ Refresh token error:', error);
-        return res.status(500).json({
-            success: false,
-            error: error.message || 'Internal server error'
-        });
+        console.error('Admin refresh token error:', error);
+        return res.status(500).json({ success: false, error: 'Internal server error' });
     }
 };
 
+// Logout
+exports.logout = async (req, res) => {
+    return res.status(200).json({ success: true, message: 'Logged out successfully' });
+};
