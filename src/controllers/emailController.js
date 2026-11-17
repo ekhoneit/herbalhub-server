@@ -433,34 +433,14 @@ exports.sendEmailDirect = async ({
 
   switch (type) {
     case "verification": {
-      if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
-        throw new Error("Supabase service configuration error");
-      }
-
-      const { data: linkData, error } = await supabase.auth.admin.generateLink({
-        type: isPasswordReset ? "recovery" : "signup",
-        email,
-        password: isPasswordReset ? undefined : password,
-      });
-
-      if (error) {
-        console.error("❌ Supabase generateLink error:", error);
-        throw new Error(
-          error.message || "Failed to generate verification link",
-        );
-      }
-
-      if (!linkData?.properties?.email_otp) {
-        throw new Error("Failed to generate OTP");
-      }
-
       if (!process.env.RESEND_API_KEY) {
         throw new Error("RESEND_API_KEY is not configured");
       }
 
+      const otp = Math.floor(100000 + Math.random() * 900000).toString();
       const emailHtml = await render(
         emailTemplates.verification({
-          otp: linkData.properties.email_otp,
+          otp: otp,
           isPasswordReset: !!isPasswordReset,
         }),
       );

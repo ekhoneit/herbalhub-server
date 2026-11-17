@@ -1,19 +1,9 @@
-const { createClient } = require("@supabase/supabase-js");
+const jwt = require("jsonwebtoken");
 const prisma = require('../utils/db.js');
 const { errorResponse, successResponse } = require("../utils/responseHandler.js");
 
 
-// Initialize Supabase admin client
-const supabase = createClient(
-    process.env.SUPABASE_URL,
-    process.env.SUPABASE_SERVICE_ROLE_KEY,
-    {
-        auth: {
-            autoRefreshToken: false,
-            persistSession: false
-        }
-    }
-);
+const JWT_SECRET = process.env.JWT_SECRET || process.env.BETTER_AUTH_SECRET || "herbalhub-super-secret-jwt-key-2026";
 
 
 // ************ admin Create ******************
@@ -203,12 +193,10 @@ const getAdminProfile = async (req, res) => {
 
         const token = authHeader.split(" ")[1];
 
-        const {
-            data: { user },
-            error,
-        } = await supabase.auth.getUser(token);
-
-        if (error || !user) {
+        let user;
+        try {
+            user = jwt.verify(token, JWT_SECRET);
+        } catch (jwtErr) {
             return errorResponse(res, "Invalid token", 401);
         }
         

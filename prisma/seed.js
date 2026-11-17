@@ -18,42 +18,52 @@ const supabase = createClient(
 async function main() {
   console.log("🌱 Starting database seed for Herbalhub...");
 
-  // ---------- SYNC SUPABASE AUTH USER ----------
+  // ---------- SYNC BETTER AUTH ADMIN USER ----------
+  const bcrypt = require("bcryptjs");
   const adminEmail = "herbalhub@gmail.com";
   const defaultPassword = "herbalhub1234";
 
   try {
-    const { data: userList } = await supabase.auth.admin.listUsers();
-    const existingAuthUser = userList?.users?.find(
-      (u) => u.email === adminEmail,
-    );
-
-    if (!existingAuthUser) {
-      console.log(`Creating Supabase Auth user for ${adminEmail}...`);
-      const { error: createError } = await supabase.auth.admin.createUser({
-        email: adminEmail,
-        password: defaultPassword,
-        email_confirm: true,
-        user_metadata: { full_name: "Herbalhub Admin" },
+    const hashedPassword = await bcrypt.hash(defaultPassword, 10);
+    let user = await prisma.user.findUnique({ where: { email: adminEmail } });
+    if (!user) {
+      user = await prisma.user.create({
+        data: {
+          email: adminEmail,
+          name: "Herbalhub Admin",
+          role: "admin",
+          emailVerified: true
+        }
       });
-      if (createError) {
-        console.error("Supabase user creation error:", createError.message);
-      } else {
-        console.log(
-          `✅ Supabase Auth user created successfully! (Default Password: ${defaultPassword})`,
-        );
-      }
     } else {
-      console.log(
-        `Supabase Auth user ${adminEmail} already exists. Updating to confirmed...`,
-      );
-      await supabase.auth.admin.updateUserById(existingAuthUser.id, {
-        email_confirm: true,
+      user = await prisma.user.update({
+        where: { email: adminEmail },
+        data: { role: "admin", emailVerified: true }
       });
-      console.log("✅ Supabase Auth user confirmed.");
     }
+
+    const account = await prisma.account.findFirst({
+      where: { userId: user.id, providerId: "credential" }
+    });
+
+    if (!account) {
+      await prisma.account.create({
+        data: {
+          userId: user.id,
+          accountId: user.id,
+          providerId: "credential",
+          password: hashedPassword
+        }
+      });
+    } else {
+      await prisma.account.update({
+        where: { id: account.id },
+        data: { password: hashedPassword }
+      });
+    }
+    console.log("✅ Better-Auth admin user created/synced successfully!");
   } catch (authErr) {
-    console.warn("Could not sync with Supabase Auth:", authErr.message);
+    console.warn("Could not sync with Better-Auth:", authErr.message);
   }
 
   // ---------- ADMIN ROLE & PERMISSIONS ----------
