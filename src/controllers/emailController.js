@@ -28,13 +28,18 @@ const emailTemplates = {
 
 const fromAddresses = {
   verification:
-    process.env.EMAIL_FROM_VERIFICATION || "Herbalhub Ecommerce <info@herbalhub.xyz>",
-  welcome: process.env.EMAIL_FROM_WELCOME || "Herbalhub Ecommerce <info@herbalhub.xyz>",
+    process.env.EMAIL_FROM_VERIFICATION ||
+    "Herbalhub Ecommerce <info@herbalhub.xyz>",
+  welcome:
+    process.env.EMAIL_FROM_WELCOME ||
+    "Herbalhub Ecommerce <info@herbalhub.xyz>",
   passwordResetConfirmation:
     process.env.EMAIL_FROM_RESET || "Herbalhub Ecommerce <auth@herbalhub.xyz>",
   orderConfirmation:
     process.env.EMAIL_FROM_ORDER || "Herbalhub Ecommerce <info@herbalhub.xyz>",
-  bulk: process.env.EMAIL_FROM_BULK || "Herbalhub Ecommerce <noreply@herbalhub.xyz>",
+  bulk:
+    process.env.EMAIL_FROM_BULK ||
+    "Herbalhub Ecommerce <noreply@herbalhub.xyz>",
 };
 
 // Direct function to send order confirmation without HTTP roundtrips
@@ -200,7 +205,7 @@ exports.sendOrderConfirmationDirect = async (orderData) => {
     to: customer?.email,
     subject: `Order Confirmation #${orderNumber} - Herbalhub`,
     html: emailHtml,
-    replyTo: "info@herbalhub.com",
+    replyTo: "info@herbalhubbd.com",
   };
 
   if (pdfAttachment) {
@@ -387,7 +392,7 @@ exports.sendOrderConfirmation = async (req, res) => {
       to: customer?.email,
       subject: `Order Confirmation #${orderNumber} - Herbalhub`,
       html: emailHtml,
-      replyTo: "info@herbalhub.com",
+      replyTo: "info@herbalhubbd.com",
     };
 
     // Add PDF attachment if generated
@@ -490,7 +495,9 @@ exports.sendEmailDirect = async ({
     }
 
     case "password-reset-confirmation": {
-      const loginUrl = origin ? `${origin}/login` : "https://herbalhub.com/login";
+      const loginUrl = origin
+        ? `${origin}/login`
+        : "https://herbalhub.com/login";
       const resetEmailHtml = await render(
         emailTemplates.passwordResetConfirmation({
           userEmail: email,

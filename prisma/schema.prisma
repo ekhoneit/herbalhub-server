@@ -1346,6 +1346,9 @@ model StoreSetting {
   duplicateOrderWindowHours   Int      @default(24)
   duplicateOrderMessage       String?  @default("You recently placed an order. Our team is processing it. If you need to make changes, please contact us.")
 
+  // Google Tag Manager (GTM)
+  gtmId                       String?  @default("")
+
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 

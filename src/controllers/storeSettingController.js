@@ -14,7 +14,8 @@ const DEFAULT_SETTINGS = {
   secondaryColor: '#153008',
   checkDuplicateOrder: true,
   duplicateOrderWindowHours: 24,
-  duplicateOrderMessage: "আপনি সম্প্রতি একটি অর্ডার করেছেন। আমাদের টিম সেটি প্রসেস করছে। অর্ডারে কোনো পরিবর্তন করতে চাইলে অনুগ্রহ করে আমাদের সাথে যোগাযোগ করুন।"
+  duplicateOrderMessage: "আপনি সম্প্রতি একটি অর্ডার করেছেন। আমাদের টিম সেটি প্রসেস করছে। অর্ডারে কোনো পরিবর্তন করতে চাইলে অনুগ্রহ করে আমাদের সাথে যোগাযোগ করুন।",
+  gtmId: ""
 };
 
 // Get Store Settings (Public for Storefront and Admin)
@@ -51,10 +52,12 @@ const updateStoreSettings = async (req, res) => {
       secondaryColor,
       checkDuplicateOrder,
       duplicateOrderWindowHours,
-      duplicateOrderMessage
+      duplicateOrderMessage,
+      gtmId
     } = req.body;
 
     const dataToUpdate = {};
+    if (gtmId !== undefined) dataToUpdate.gtmId = gtmId?.trim() || "";
     if (siteTitle !== undefined) dataToUpdate.siteTitle = siteTitle.trim() || 'Herbalhub';
     if (logo !== undefined) dataToUpdate.logo = logo || null;
     if (footerLogo !== undefined) dataToUpdate.footerLogo = footerLogo || null;
