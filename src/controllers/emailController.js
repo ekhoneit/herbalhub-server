@@ -628,3 +628,9 @@ exports.getEmailStatus = async (req, res) => {
     });
   }
 };
+
+
+// Export helpers for authController
+exports.resend = resend;
+exports.fromAddresses = fromAddresses;
+exports.emailTemplates = emailTemplates;

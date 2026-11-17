@@ -23,6 +23,7 @@
   "license": "ISC",
   "description": "Herbalhub E-Commerce Backend Server",
   "dependencies": {
+    "@better-auth/infra": "^0.4.30",
     "@google-analytics/data": "^7.0.0",
     "@google/genai": "^2.28.0",
     "@prisma/client": "^6.17.1",
