@@ -1,6 +1,6 @@
 # Herbalhub E-commerce Server
 
-Backend API server for **herbalhub.com** e-commerce platform.
+Backend API server for **herbalhubbd.com** e-commerce platform.
 
 # Express Framework
 

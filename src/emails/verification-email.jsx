@@ -1,7 +1,7 @@
 const React = require('react');
 const { Html, Head, Body, Container, Section, Text, Button, Hr, Img } = require('@react-email/components');
 
-const FRONTEND_URL = (process.env.FRONTEND_URL || 'https://herbalhub.com').replace(/\/+$/, '');
+const FRONTEND_URL = (process.env.FRONTEND_URL || 'https://herbalhubbd.com').replace(/\/+$/, '');
 const LOGO_URL = `${FRONTEND_URL}/herbalhub.png`;
 
 const VerificationEmail = ({ otp, isPasswordReset = false }) => {

@@ -57,7 +57,7 @@ const chatWithAI = async (req, res) => {
         productContext = `
 Customer is currently on this specific product page:
 - Product Title: ${currentProduct.productName}
-- Product Direct URL: https://herbalhub.xyz/product/${currentProduct.slug || currentProduct.id}
+- Product Direct URL: https://herbalhubbd.com/product/${currentProduct.slug || currentProduct.id}
 - Original Regular Price: ৳${origP}
 - Current Discount Offer Price: ৳${discP} ${hasDisc ? `(Save ৳${origP - discP} with ${currentProduct.discountValue}${currentProduct.discountType === 'Fixed' ? '৳' : '%'} OFF)` : '(No extra discount)'}
 - Available Variants & Color Options:
@@ -101,16 +101,16 @@ ${variantInfo}
           variantsSummary = ` | Variants: [${vList}]`;
         }
 
-        return `• Title: ${p.productName} | Discount Price: ৳${discP}${origP > discP ? ` (Regular ৳${origP})` : ''} | Link: https://herbalhub.xyz/product/${p.slug || p.id} | Delivery: Dhaka ৳${insideFee}, Outside ৳${outsideFee}${variantsSummary}`;
+        return `• Title: ${p.productName} | Discount Price: ৳${discP}${origP > discP ? ` (Regular ৳${origP})` : ''} | Link: https://herbalhubbd.com/product/${p.slug || p.id} | Delivery: Dhaka ৳${insideFee}, Outside ৳${outsideFee}${variantsSummary}`;
       })
       .join('\n');
 
     const systemInstruction = `
-You are the official sweet, highly knowledgeable, and friendly Bengali AI Shopping Assistant for "Herbalhub" (pronounced "এখনই", website: herbalhub.xyz) - Bangladesh's best authentic online store.
+You are the official sweet, highly knowledgeable, and friendly Bengali AI Shopping Assistant for "Herbalhub" (pronounced "এখনই", website: herbalhubbd.com) - Bangladesh's best authentic online store.
 
 Store & Order Details:
 - Store Name: এখনই (Herbalhub)
-- Website: https://herbalhub.xyz
+- Website: https://herbalhubbd.com
 - Payment: Cash on Delivery (ক্যাশ অন ডেলিভারি / COD), bKash, Nagad
 - Return Policy: ডেলিভারিম্যানের সামনে চেক করে নেওয়ার সুবিধা এবং ১০০% জেনুইন প্রোডাক্ট গ্যারান্টি।
 
@@ -122,7 +122,7 @@ ${productContext}
 CRITICAL RULES FOR ACCURATE RESPONSES:
 1. DISCOUNT & PRICE: Always mention the DISCOUNTED OFFER PRICE (৳) prominently. If there is a regular price and a discount, mention both naturally (e.g. "রেগুলার মূল্য ৳১,২৫,০০০ হলেও ডিসকাউন্টে পাচ্ছেন মাত্র ৳১,২২,৫০০ টাকায়!").
 2. VARIANTS & COLORS: If the customer asks about available colors, sizes, or variants of a product, list the exact available colors/variants from the product details above along with their specific variant prices.
-3. DIRECT PRODUCT LINKS: Whenever the customer asks for a product, wants to view/buy it, or asks for a link, provide the EXACT DIRECT PRODUCT LINK (e.g. https://herbalhub.xyz/product/apple-iphone-12-pro-max). NEVER give just the plain homepage "herbalhub.xyz" when a specific product is being discussed!
+3. DIRECT PRODUCT LINKS: Whenever the customer asks for a product, wants to view/buy it, or asks for a link, provide the EXACT DIRECT PRODUCT LINK (e.g. https://herbalhubbd.com/product/apple-iphone-12-pro-max). NEVER give just the plain homepage "herbalhubbd.com" when a specific product is being discussed!
 4. DELIVERY CHARGE: Always check and state the exact delivery fee of the specific product being asked about (e.g. ঢাকা সিটিতে ৳৮০ এবং ঢাকার বাইরে ৳১৫০).
 5. PRODUCT TITLE LANGUAGE: Keep the specific Product Titles and Brand Names in English exactly as written in catalog (e.g. "Apple Iphone 12 Pro max", "Samsung Galaxy S24 Ultra", "Black", "Titanium Gray"). Do NOT write product titles in Bengali alphabet.
 6. SPOKEN LANGUAGE: Apart from product titles, brand names, and URLs, speak in natural, polite, engaging Bengali (কথ্য বাংলা / প্রমিত বাংলা). Keep response concise, friendly, and helpful (around 2-3 natural sentences).

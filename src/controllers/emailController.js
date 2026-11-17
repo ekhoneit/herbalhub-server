@@ -29,17 +29,17 @@ const emailTemplates = {
 const fromAddresses = {
   verification:
     process.env.EMAIL_FROM_VERIFICATION ||
-    "Herbalhub Ecommerce <info@herbalhub.xyz>",
+    "Herbalhub Ecommerce <info@herbalhubbd.com>",
   welcome:
     process.env.EMAIL_FROM_WELCOME ||
-    "Herbalhub Ecommerce <info@herbalhub.xyz>",
+    "Herbalhub Ecommerce <info@herbalhubbd.com>",
   passwordResetConfirmation:
-    process.env.EMAIL_FROM_RESET || "Herbalhub Ecommerce <auth@herbalhub.xyz>",
+    process.env.EMAIL_FROM_RESET || "Herbalhub Ecommerce <auth@herbalhubbd.com>",
   orderConfirmation:
-    process.env.EMAIL_FROM_ORDER || "Herbalhub Ecommerce <info@herbalhub.xyz>",
+    process.env.EMAIL_FROM_ORDER || "Herbalhub Ecommerce <info@herbalhubbd.com>",
   bulk:
     process.env.EMAIL_FROM_BULK ||
-    "Herbalhub Ecommerce <noreply@herbalhub.xyz>",
+    "Herbalhub Ecommerce <noreply@herbalhubbd.com>",
 };
 
 // Direct function to send order confirmation without HTTP roundtrips
@@ -478,7 +478,7 @@ exports.sendEmailDirect = async ({
     case "welcome": {
       const dashboardUrl = origin
         ? `${origin}/my-account`
-        : "https://herbalhub.com/my-account";
+        : "https://herbalhubbd.com/my-account";
       const welcomeEmailHtml = await render(
         emailTemplates.welcome({
           userEmail: email,
@@ -497,7 +497,7 @@ exports.sendEmailDirect = async ({
     case "password-reset-confirmation": {
       const loginUrl = origin
         ? `${origin}/login`
-        : "https://herbalhub.com/login";
+        : "https://herbalhubbd.com/login";
       const resetEmailHtml = await render(
         emailTemplates.passwordResetConfirmation({
           userEmail: email,
