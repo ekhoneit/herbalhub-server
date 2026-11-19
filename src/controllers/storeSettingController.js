@@ -54,7 +54,8 @@ const updateStoreSettings = async (req, res) => {
       checkDuplicateOrder,
       duplicateOrderWindowHours,
       duplicateOrderMessage,
-      gtmId
+      gtmId,
+      pixelId
     } = req.body;
 
     const dataToUpdate = {};
