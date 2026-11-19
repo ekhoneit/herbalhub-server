@@ -1348,6 +1348,7 @@ model StoreSetting {
 
   // Google Tag Manager (GTM)
   gtmId                       String?  @default("")
+  pixelId                     String?  @default("")
 
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
